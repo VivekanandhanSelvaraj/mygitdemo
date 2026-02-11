@@ -1,0 +1,416 @@
+/* 03-NOV-2025	Vivekanandhan Selvaraj	DX_DMND0002326	Ramp web services integratiing with PeopleSoft */
+
+/* Start	03-NOV-2025	Vivekanandhan Selvaraj	DX_DMND0002326	Ramp web services integratiing with PeopleSoft */
+
+import PS_PT:Integration:IRequestHandler;
+
+class authorization
+   method authorization();
+   method Token1_Refresh() Returns string;
+   method Token2_Access() Returns string;
+   method RefreshToken_Insert(&strRefTokenType As string, &strRefTokenValue As string) Returns string;
+   method AccessToken_Insert(&strAcessTokenType As string, &strAcessTokenValue As string, &strTokenPrefix As string) Returns string;
+   method Base64Encoding(&strUserid As string, &strPassword As string) Returns string;
+   method SendMessage(&sopname As string, &iparameter As string, &uriindex As integer, &msgbody As string, &jsonreq As string) Returns string;
+   
+   property string propstr_BasicTokenforAccess;
+   property string propstr_RefreshToken;
+   property string propstr_AccessToken;
+   property string propstr_GeneratedAccessToken;
+   property string propstr_client_id;
+   property string propstr_client_secret;
+   property string propstr_username;
+   property string propstr_password;
+   property string propstr_grant_type_refresh;
+   property string propstr_grant_type_access;
+   property string propstr_refresh_token;
+   property string propstr_credtype;
+   property string propstr_scope;
+   property string prop_affected_employee_id;
+   property string prop_manager_employee_id;
+   property string prop_termination_date;
+   
+end-class;
+
+method authorization
+   /*Initialise the required credentials for the API authentication token genertion */
+   
+   Local string &strAccessTokenInsert;
+   /* Ramp App credentials */
+   REM MessageBox(0, "", 0, 0, "method authorization");
+   &propstr_client_id = "";
+   &propstr_client_secret = "";
+   &propstr_grant_type_access = "";
+   &propstr_scope = " entities:read reimbursements:read spend_programs:read statements:read vendors:read vendors:write custom_records:read custom_records:write";
+   
+   &propstr_BasicTokenforAccess = %This.Base64Encoding(&propstr_client_id, &propstr_client_secret); /* Basic Base64 Encoding */
+   rem &strAccessTokenInsert = %This.AccessToken_Insert("AUTH", &propstr_BasicTokenforAccess, "Basic"); /* Basic Base64 Encoder token insert */
+   &propstr_GeneratedAccessToken = "Bearer " | %This.Token2_Access();
+   If &propstr_GeneratedAccessToken <> "no success" Then
+      &strAccessTokenInsert = %This.AccessToken_Insert("ACC", &propstr_GeneratedAccessToken, "Bearer"); /* Basic Base64 Encoder token insert */
+   Else
+      &strAccessTokenInsert = %This.AccessToken_Insert("ACC", "no success", "none"); /* Basic Base64 Encoder token insert */
+   End-If;
+   
+   MessageBox(0, "", 0, 0, "Access token generation assignment completed - " | &propstr_GeneratedAccessToken);
+   /* For future references */
+   &propstr_refresh_token = "";
+   &propstr_username = "";
+   &propstr_password = "";
+   &propstr_grant_type_refresh = "";
+end-method;
+
+method Base64Encoding
+   /+ &strUserid as String, +/
+   /+ &strPassword as String +/
+   /+ Returns String +/
+   Local string &strDerivedBase64Encoding;
+   Local string &toEncode;
+   Local JavaObject &encoder;
+   Local JavaObject &bytes;
+   
+   &toEncode = %This.propstr_client_id | ":" | %This.propstr_client_secret;
+   &encoder = GetJavaClass("java.util.Base64").getEncoder();
+   &bytes = CreateJavaObject("java.lang.String", &toEncode).getBytes("UTF-8");
+   &strDerivedBase64Encoding = &encoder.encodeToString(&bytes);
+   
+   rem MessageBox(0, "", 0, 0, "Encoding completed");
+   Return &strDerivedBase64Encoding;
+end-method;
+
+method Token1_Refresh
+   /+ Returns String +/
+   
+   Local string &sOperationName;
+   Local string &sSubject;
+   Local string &sJSSting;
+   Local string &sApiResult;
+   Local string &sopname;
+   Local string &strReqMsgContentString;
+   Local string &strRespMsgContentString;
+   Local string &strReqMsgParameters;
+   
+   Local Message &msgReq;
+   Local Message &msgResponse;
+   
+   Local boolean &bAuthmessage;
+   Local boolean &bReqMsgSetting;
+   
+   Local Document &docUriDocument;
+   Local Compound &comUriCompound;
+   
+   /* Derived the Key Value pair for the Request Message */
+   &strReqMsgParameters = "client_id=" | EncodeURLForQueryString(%This.propstr_client_id);
+   &strReqMsgParameters = &strReqMsgParameters | "&client_secret=" | EncodeURLForQueryString(%This.propstr_client_secret);
+   &strReqMsgParameters = &strReqMsgParameters | "&username=" | EncodeURLForQueryString(%This.propstr_username);
+   &strReqMsgParameters = &strReqMsgParameters | "&password=" | EncodeURLForQueryString(%This.propstr_password);
+   &strReqMsgParameters = &strReqMsgParameters | "&grant_type=" | EncodeURLForQueryString(%This.propstr_grant_type_refresh);
+   &strReqMsgParameters = &strReqMsgParameters | "&credtype=" | EncodeURLForQueryString(%This.propstr_credtype);
+   &strReqMsgContentString = &strReqMsgParameters;
+   
+   &sOperationName = "";
+   &sopname = "Operation." | &sOperationName;
+   &msgReq = CreateMessage(@(&sopname));
+   
+   /* Define the URI index */
+   &docUriDocument = &msgReq.GetURIDocument();
+   &comUriCompound = &docUriDocument.DocumentElement;
+   &msgReq.URIResourceIndex = 1;
+   
+   /*No auth token for this as we are generating the Access token itself */
+   rem &bAuthmessage = &msgReq.IBInfo.IBConnectorInfo.AddConnectorProperties("Authorization", "", %Header);
+   &bAuthmessage = &msgReq.IBInfo.IBConnectorInfo.AddConnectorProperties("Authorization", "Basic " | %This.propstr_BasicTokenforAccess, %Header);
+   
+   
+   /* Declaring the mesage content as x-www-form-urlencoded */
+   &msgReq.SegmentContentType = "application/x-www-form-urlencoded; charset=utf-8";
+   &bReqMsgSetting = &msgReq.SetContentString(&strReqMsgContentString);
+   &msgResponse = %IntBroker.SyncRequest(&msgReq);
+   
+   If &msgResponse.ResponseStatus = %IB_Status_Success Then
+      &strRespMsgContentString = &msgResponse.GetContentString();
+      rem  &rtnval = "success";
+   Else
+      rem &rtnval = "failure";
+   End-If;
+   
+   Return &strRespMsgContentString;
+   
+end-method;
+
+method Token2_Access
+   /+ Returns String +/
+   
+   Local string &sOperationName;
+   Local string &sSubject;
+   Local string &sJSSting;
+   Local string &sApiResult;
+   Local string &sopname;
+   Local string &strReqMsgContentString;
+   Local string &strRespMsgContentString;
+   Local string &strReqMsgParameters;
+   
+   Local Message &msgReq;
+   Local Message &msgResponse;
+   
+   Local boolean &bAuthmessage;
+   Local boolean &bReqMsgSetting;
+   
+   Local Document &docUriDocument;
+   Local Compound &comUriCompound;
+   
+   Local JsonParser &js_parser;
+   Local JsonObject &js_rootObj;
+   Local string &tokenType, &accessToken;
+   
+   /* Derived the Key Value pair for the Request Message */
+   &strReqMsgParameters = "grant_type=" | EncodeURLForQueryString(%This.propstr_grant_type_access);
+   &strReqMsgParameters = &strReqMsgParameters | "&scope=" | EncodeURLForQueryString(%This.propstr_scope);
+   &strReqMsgContentString = &strReqMsgParameters;
+   
+   &sOperationName = "DX_RAMP_AUTH_POST";
+   &sopname = "Operation." | &sOperationName;
+   &msgReq = CreateMessage(@(&sopname));
+   
+   REM MessageBox(0, "", 0, 0, "OPeration Name" | &sopname | "-" | %This.propstr_BasicTokenforAccess);
+   /* Define the URI index */
+   &docUriDocument = &msgReq.GetURIDocument();
+   &comUriCompound = &docUriDocument.DocumentElement;
+   &msgReq.URIResourceIndex = 1;
+   
+   /* Basic64 encoded auth token is embedded */
+   &bAuthmessage = &msgReq.IBInfo.IBConnectorInfo.AddConnectorProperties("Authorization", "Basic " | %This.propstr_BasicTokenforAccess, %Header);
+   
+   /* Declaring the mesage content as x-www-form-urlencoded */
+   &msgReq.SegmentContentType = "application/x-www-form-urlencoded; charset=utf-8";
+   &bReqMsgSetting = &msgReq.SetContentString(&strReqMsgContentString);
+   &msgResponse = %IntBroker.SyncRequest(&msgReq);
+   
+   If &msgResponse.ResponseStatus = %IB_Status_Success Then
+      &strRespMsgContentString = &msgResponse.GetContentString();
+      
+      /* Create parser object */
+      &js_parser = CreateJsonParser();
+      
+      /* Parse JSON string */
+      If &js_parser.Parse(&strRespMsgContentString) Then
+         /* Get root JSON object */
+         &js_rootObj = &js_parser.GetRootObject();
+         
+         /* Extract values by property name */
+         &tokenType = &js_rootObj.GetString("token_type");
+         &accessToken = &js_rootObj.GetString("access_token");
+         
+         /* Use the values as needed */
+         REM MessageBox(0, "", 0, 0, "Access Token " | &accessToken);
+      Else
+      End-If;
+      Return &accessToken;
+   Else
+      Return "no success";
+   End-If;
+   
+end-method;
+
+
+method RefreshToken_Insert
+   /+ &strRefTokenType as String, +/
+   /+ &strRefTokenValue as String +/
+   /+ Returns String +/
+   
+   Local Record &recTokenRecord;
+   Local date &dtEffectiveDate;
+   Local datetime &dtimeExpireDatetime;
+   Local number &nbEffectiveSeq;
+   Local number &nbEffectiveSeq_New;
+   Local string &stTokenTye;
+   Local string &stTokenValue;
+   
+   try
+      &recTokenRecord = CreateRecord(Record.DX_RAMP_TKN_TBL);
+      rem SQLExec("SELECT A.EFFDT, A.EFFSEQ, A.DX_TOKENTYPE, A.AUTHTOKENFILE FROM PS_DX_RAMP_TKN_TBL A WHERE A.EFFDT = (SELECT MAX(A1.EFFDT) FROM PS_DX_RAMP_TKN_TBL A1 WHERE A.EFFDT <= GETDATE() AND A.DX_TOKENTYPE = A1.DX_TOKENTYPE) AND A.EFFSEQ = (SELECT MAX(A2.EFFSEQ) FROM PS_DX_RAMP_TKN_TBL A2 WHERE A.EFFDT = A2.EFFDT  AND A.DX_TOKENTYPE = A2.DX_TOKENTYPE)", &dtEffectiveDate, &nbEffectiveSeq, &stTokenTye, &stTokenValue);
+      SQLExec(SQL.DX_CON_TKN_SQL, &dtEffectiveDate, &nbEffectiveSeq, &stTokenTye, &stTokenValue, &dtimeExpireDatetime);
+      If All(&dtEffectiveDate) Then
+         If &dtEffectiveDate = %Date Then
+            &nbEffectiveSeq_New = &nbEffectiveSeq + 1;
+         Else
+            &nbEffectiveSeq_New = 1
+         End-If;
+      Else
+         &nbEffectiveSeq_New = 1
+      End-If;
+      
+      &recTokenRecord.EFFDT.Value = %Date;
+      &recTokenRecord.EFFSEQ.Value = &nbEffectiveSeq_New;
+      If All(&strRefTokenType) Then
+         &recTokenRecord.DX_TOKENTYPE.Value = &strRefTokenType;
+      Else
+         &recTokenRecord.DX_TOKENTYPE.Value = "NONE";
+      End-If;
+      &recTokenRecord.DESCR.Value = "";
+      &recTokenRecord.AUTHTOKENFILE.Value = "";
+      &recTokenRecord.DX_API_CLIENT_ID.Value = &propstr_client_id;
+      &recTokenRecord.DX_API_CLIENT_SECR.Value = &propstr_client_secret;
+      &recTokenRecord.DX_API_USERNAME.Value = &propstr_username;
+      &recTokenRecord.DX_API_PASSWORD.Value = &propstr_password;
+      &recTokenRecord.DX_API_GRANT_REF.Value = &propstr_grant_type_refresh;
+      &recTokenRecord.DX_API_CRED_TYPE.Value = &propstr_credtype;
+      &recTokenRecord.DX_API_TOKEN_REF.Value = &propstr_refresh_token;
+      &recTokenRecord.DATETIME_CREATED.Value = %Datetime;
+      &recTokenRecord.IB_EXPIREDTTM.Value = AddToDateTime(%Datetime, 0, 0, 0, 0, 0, 3000); /*Password valid for 50 minutes*/
+      &recTokenRecord.LASTUPDOPRID.Value = %OperatorId;
+      &recTokenRecord.LASTUPDDTTM.Value = %Datetime;
+      &recTokenRecord.Insert();
+      Return "success";
+   catch Exception &exAccessToken_Insert
+      Return "Exception Access Token insert - " | &exAccessToken_Insert.ToString();
+   end-try;
+end-method;
+
+method AccessToken_Insert
+   /+ &strAcessTokenType as String, +/
+   /+ &strAcessTokenValue as String, +/
+   /+ &strTokenPrefix as String +/
+   /+ Returns String +/
+   
+   Local Record &recTokenRecord;
+   Local date &dtEffectiveDate;
+   Local datetime &dtimeExpireDatetime;
+   Local number &nbEffectiveSeq;
+   Local number &nbEffectiveSeq_New;
+   Local string &stTokenTye;
+   Local string &stTokenValue;
+   
+   REM MessageBox(0, "", 0, 0, "method AccessToken_Insert");
+   try
+      &recTokenRecord = CreateRecord(Record.DX_RAMP_TKN_TBL);
+      rem SQLExec("SELECT A.EFFDT, A.EFFSEQ, A.DX_TOKENTYPE, A.AUTHTOKENFILE FROM PS_DX_RAMP_TKN_TBL A WHERE A.EFFDT = (SELECT MAX(A1.EFFDT) FROM PS_DX_RAMP_TKN_TBL A1 WHERE A.EFFDT <= GETDATE() AND A.DX_TOKENTYPE = A1.DX_TOKENTYPE) AND A.EFFSEQ = (SELECT MAX(A2.EFFSEQ) FROM PS_DX_RAMP_TKN_TBL A2 WHERE A.EFFDT = A2.EFFDT  AND A.DX_TOKENTYPE = A2.DX_TOKENTYPE)", &dtEffectiveDate, &nbEffectiveSeq, &stTokenTye, &stTokenValue);
+      SQLExec(SQL.DX_RAMP_TKN_SQL, &dtEffectiveDate, &nbEffectiveSeq, &stTokenTye, &stTokenValue, &dtimeExpireDatetime);
+      If All(&dtEffectiveDate) Then
+         If &dtEffectiveDate = %Date Then
+            &nbEffectiveSeq_New = &nbEffectiveSeq + 1;
+         Else
+            &nbEffectiveSeq_New = 1
+         End-If;
+      Else
+         &nbEffectiveSeq_New = 1
+      End-If;
+      
+      &recTokenRecord.EFFDT.Value = %Date;
+      &recTokenRecord.EFFSEQ.Value = &nbEffectiveSeq_New;
+      If All(&strAcessTokenType) Then
+         &recTokenRecord.DX_TOKENTYPE.Value = &strAcessTokenType;
+      Else
+         &recTokenRecord.DX_TOKENTYPE.Value = "ACC";
+      End-If;
+      &recTokenRecord.DESCR.Value = &strTokenPrefix;
+      &recTokenRecord.AUTHTOKENFILE.Value = &strAcessTokenValue;
+      &recTokenRecord.DATETIME_CREATED.Value = %Datetime;
+      &recTokenRecord.IB_EXPIREDTTM.Value = AddToDateTime(%Datetime, 0, 0, 6, 0, 0, 0); /*Password valid for 10 days however we regenerate every monday */
+      &recTokenRecord.LASTUPDOPRID.Value = %OperatorId;
+      &recTokenRecord.LASTUPDDTTM.Value = %Datetime;
+      &recTokenRecord.Insert();
+      
+      rem MessageBox(0, "", 0, 0, "Access token inert  completed ");
+      Return "success";
+   catch Exception &exAccessToken_Insert
+      Return "Exception Access Token insert - " | &exAccessToken_Insert.ToString();
+   end-try;
+end-method;
+
+method SendMessage
+   /+ &sopname as String, +/
+   /+ &iparameter as String, +/
+   /+ &uriindex as Integer, +/
+   /+ &msgbody as String, +/
+   /+ &jsonreq as String +/
+   /+ Returns String +/
+   
+   Local Message &MSG;
+   Local boolean &authmessage, &setstring;
+   Local Document &docUriDocument;
+   Local Compound &comUriCompound;
+   Local object &RESP;
+   Local string &rtnval;
+   Local string &sAuthToken;
+   Local string &soOperationName;
+   
+   Local JsonBuilder &jBldr;
+   Local string &jBldrStr;
+   
+   rem &sAuthToken = "Basic ZDhlMmQ3MjMxZWQ2NDI5N2FmM2E2N2Q0ZmEwZjk0MDc6Nkx0Km1fUTUyUG4t";
+   rem &sAuthToken = "Bearer YrzlCX1n_VVnOpdO_D7H_xyCxW9wdkfSBdhRCEpsB98zkvm56wLAthl0RsKEyOfY2_F91iVjbx_ZCpFbQwofsw";
+   rem &sAuthToken = "Basic UFMgSW50ZWdyYXRpb24gQmFzaWM6dF82aXoldUQyN15hRWw/YzY2PEg+TD9WNDp1Zz8lXWEpYig1WG85Xg==";
+   REM MessageBox(0, "", 0, 0, "Upper(Substring(&sopname, 1, 7)) - " | Upper(Substring(&sopname, 1, 7)));
+   <*
+   If Upper(Substring(&sopname, 1, 7)) = "DX_RAMP" Then
+      If Upper(&sopname) = "DX_RAMP_AUTH_POST" Then
+         &sAuthToken = "Basic cmFtcF9pZF9oa2xBb1RmNzJ6RWZQN1R2aEdFRnNMZ0FKdWhCb0pLNDhGZzk5Qk1hOnJhbXBfc2VjXzI0MlcySkpiMXJYbTlCM2IxbDZMVDhjb3cwWGxkbzJ0ZlExVjJpVE5oTDNyNkMyUg==";
+      Else
+         &sAuthToken = &jsonreq;
+      End-If;
+   Else
+      &sAuthToken = "Basic UFMgSW50ZWdyYXRpb24gQmFzaWM6Y1VieHYkPVpEWj5PQDNQQDE4I0hFRDouNldhSj9AeG1kPEUmdUVRIQ==";
+   End-If;
+*>
+   rem &sAuthToken = "Bearer 3AAABLblqZhB4Bao6ai9Pkjul1XGJ74Rc5MJ2wQNQevL3rvaIX8wrt5ahOPHPY5jYdi28RU8Aq4ghIhhDCPrFHw15xML9fo0O";
+   rem &sAuthToken = "Bearer 3AAABLblqZhAxX1AiTw225OerJ6-bz6F-lI42iUzQh09MLHNRqlM3rfSfYf6FiMLfh3kMm9lEd5XyGqFjroPeYpxeA-YaafCM";
+   rem &sAuthToken = "Bearer 3AAABLblqZhDwKYLBu_XVzSf1jHNmU02k2bbeh1Qaraj9l0l6vQ_1safTYjRPsHLWtspwHBiarUr76ckbHxNaGvxSU6OlyYEX";
+   &soOperationName = &sopname;
+   MessageBox(0, "", 0, 0, "&sopname - " | &sopname);
+   &sopname = "Operation." | &sopname;
+   &MSG = CreateMessage(@(&sopname));
+   &authmessage = &MSG.IBInfo.IBConnectorInfo.AddConnectorProperties("Authorization", %This.propstr_GeneratedAccessToken, %Header);
+   rem MessageBox(0, "", 0, 0, "Sting of &authmessage - " | %This.propstr_GeneratedAccessToken);
+   
+   &docUriDocument = &MSG.GetURIDocument();
+   &comUriCompound = &docUriDocument.DocumentElement;
+   &MSG.URIResourceIndex = &uriindex;
+   
+   If Upper(&soOperationName) = "DX_RAMP_USER_PATCH" Then
+      &comUriCompound.GetPropertyByName("userid").Value = &iparameter;
+      rem MessageBox(0, "", 0, 0, "Index - " | &uriindex | ". Sting of &iparameter - " | &comUriCompound.GetPropertyByName("userid").Value);
+   Else
+   End-If;
+   If Upper(&soOperationName) = "DX_RAMP_CREC_PUT" Then
+      &comUriCompound.GetPropertyByName("custom_table_name").Value = &iparameter;
+      rem MessageBox(0, "", 0, 0, "Index - " | &uriindex | ". Sting of &iparameter - " | &comUriCompound.GetPropertyByName("userid").Value);
+   Else
+   End-If;
+   
+   If All(&msgbody) Then
+      &setstring = &MSG.SetContentString(&msgbody);
+      rem &setstring = &MSG.SetContentString(&jBldrStr);
+   End-If;
+   MessageBox(0, "", 0, 0, "&msgbody - " | &msgbody);
+   &RESP = %IntBroker.SyncRequest(&MSG);
+   
+   REM MessageBox(0, "", 0, 0, "Sting of &RESP.ResponseStatus - " | &RESP.GetContentString());
+   /*If &RESP.ResponseStatus = %IB_Status_Success Then
+      &rtnval = &RESP.GetContentString();
+   Else
+      &rtnval = "failure";
+   End-If;
+*/
+   
+   If &RESP.ResponseStatus = %IB_Status_Success Then
+      &rtnval = &RESP.GetContentString();
+   Else
+      Local number &MsgSet = &RESP.IBException.MessageSetNumber;
+      Local number &MsgNum = &RESP.IBException.MessageNumber;
+      Local string &MsgEx = &RESP.IBException.ToString();
+      &rtnval = &MsgEx;
+   End-If;
+   
+   Return &rtnval;
+   /*
+   catch Exception &ex1
+      rem &rtnval = "Error occurred. Please contact your administrator. " | &ex1.ToString();
+      &rtnval = "failure";
+      Return &rtnval;
+   end-try;
+*/
+   
+end-method;
+
+/* End	03-NOV-2025	Vivekanandhan Selvaraj	DX_DMND0002326	Ramp web services integratiing with PeopleSoft */
